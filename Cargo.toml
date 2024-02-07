@@ -16,20 +16,27 @@ opt-level = "z"
 
 [features]
 pio = ["esp-idf-sys/pio"]
+default = ["std", "embassy", "esp-idf-svc/native"]
+std = ["alloc", "esp-idf-svc/binstart", "esp-idf-svc/std"]
+embassy = ["esp-idf-svc/embassy-sync", "esp-idf-svc/critical-section", "esp-idf-svc/embassy-time-driver"]
+alloc = ["esp-idf-svc/alloc"]
+
 
 [dependencies]
 circular-buffer = { path = "circular-buffer" }
-esp-idf-sys = { version = "0.32.1", features = ["binstart"] }
-esp-idf-hal = { version = "0.40.1"}
-esp-idf-svc = { version = "0.45.0"}
+esp-idf-sys = { version = "0.34" }
+esp-idf-hal = { version = "0.43"}
+esp-idf-svc = { version = "0.48", default-features = false }
 ds18b20 = "0.1.1"
 embedded-graphics = "0.7.1"
 ssd1306 = "0.7.1"
 anyhow = "1.0.71"
 one-wire-bus = "0.1.1"
 log = "0.4.17"
+itertools = "0.10.0"
+
 
 [build-dependencies]
-embuild = "0.31.1"
+embuild = "0.31.3"
 
 

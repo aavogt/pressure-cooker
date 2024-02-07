@@ -19,7 +19,7 @@ I assembled and tested the pressure cooker I proposed below. I was unhappy with 
 # TODO
 
  - [ ] dissatisfaction with dynamic graph limits
- - [ ] solder ds18b20, longer wires again
+ - [x] solder ds18b20 now reading as many as possible sorted by address.
  - [ ] battery and housing and power switch
  - [ ] screen mounting such that it covers the dev board
  - [ ] vibration motor gets stuck with a 200 ms pulse. So the pulse needs to be longer, or connect it between two gpios to toggle reverse, or somehow use that configuration to measure whether it is moving

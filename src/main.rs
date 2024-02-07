@@ -12,6 +12,8 @@ use ssd1306::{rotation::DisplayRotation, size::DisplaySize128x32, Ssd1306, I2CDi
 use std::sync::atomic::Ordering::Relaxed;
 use log::*;
 
+use itertools::Itertools;
+
 use circular_buffer::*;
 
 
@@ -53,35 +55,51 @@ fn mk_buzzer(pin : AnyIOPin) -> anyhow::Result<Box<dyn FnMut(u8)>> {
     Ok(Box::new(move |n| buzzing.store(n, Relaxed)))
 }
 
-fn mk_get_temp(pin : AnyIOPin) -> anyhow::Result<Box<dyn FnMut() -> anyhow::Result<f32>>> {
+// this must surely be a library function, but into() needs a type annotation
+fn result_to_either<T, E>(x: Result<T, E>) -> itertools::Either<T, E> {
+    match x {
+        Ok(v) => itertools::Either::Left(v),
+        Err(e) => itertools::Either::Right(e),
+    }
+}
+
+// I want to change this to get temperatures for all of the sensors,
+// sorted by address, should these addresses be returned?
+fn mk_get_temp(pin : AnyIOPin) -> anyhow::Result<Box<dyn FnMut() -> anyhow::Result<Vec<f32>>>> {
 
     let pindriver = PinDriver::input_output_od(pin)?;
     let mut one_wire_bus = OneWire::new(pindriver).map_err(|_| anyhow!("Failed to initialize 1-wire bus"))?;
 
-    let addr = one_wire_bus.devices(false, &mut Ets)
-            .next()
-            .ok_or(anyhow!("No OneWire devices found"))?
-            .map_err(|x| anyhow!("onewire finding addr error {:?}", x))?;
+    let f = move || -> anyhow::Result<Vec<f32>> {
 
-    let dev = Ds18b20::new::<anyhow::Error>(addr)
-        .map_err(|x| anyhow!("onewire can't init ds18b20 {:?}", x))?;
+        let (mut addrs,errs) : (Vec<_>, Vec<_>) = one_wire_bus.devices(false, &mut Ets)
+              .partition(|x| x.is_ok());
 
-    let f = move || -> anyhow::Result<f32> {
-        dev.start_temp_measurement(
-            &mut one_wire_bus,
-            &mut Ets)
-            .map_err(|x| anyhow!("onewire can't start measurment {:?}", x))?;
-        dev.read_data(
-            &mut one_wire_bus,
-            &mut Ets)
-            .map_err(|x| anyhow!("onewire can't finish measurment {:?}", x))
-            .map(|x| x.temperature)
+        addrs.sort_by_key(|a| a.unwrap().0);
+
+        let reads : Vec<_> = addrs.into_iter().map(|addr| {
+          let dev = Ds18b20::new::<anyhow::Error>(addr.unwrap())
+              .map_err(|x| anyhow!("onewire can't init ds18b20 {:?}", x))?;
+
+          info!("addr: {:?}", addr);
+          dev.start_temp_measurement(
+              &mut one_wire_bus,
+              &mut Ets)
+              .map_err(|x| anyhow!("onewire can't start measurment {:?}", x))?;
+          dev.read_data(
+              &mut one_wire_bus,
+              &mut Ets)
+              .map_err(|x| anyhow!("onewire can't finish measurment {:?}", x))
+              .map(|x| x.temperature)
+        }).filter_map(|x| x.ok()).collect();
+
+        Ok(reads)
     };
     Ok(Box::new(f))
 }
 
 
-fn mk_display<'d>(i2c_driver : I2cDriver<'d>) -> 
+fn mk_display<'d>(i2c_driver : I2cDriver<'d>) ->
     anyhow::Result<Ssd1306<I2CInterface<I2cDriver<'d>>,DisplaySize128x32,BufferedGraphicsMode<DisplaySize128x32>>> {
     let i2c_interface = I2CDisplayInterface::new(i2c_driver);
     let mut display = Ssd1306::new(i2c_interface, DisplaySize128x32, DisplayRotation::Rotate0)
@@ -103,7 +121,7 @@ fn main() -> anyhow::Result<()>{
 
 
     info!("initializing peripherals");
-    let peripherals = Peripherals::take().ok_or(anyhow!("Peripherals already taken"))?;
+    let peripherals = Peripherals::take()?;
 
     let mut state: State<{128-W_TEXT}> = State::new();
 
@@ -129,8 +147,9 @@ fn main() -> anyhow::Result<()>{
     let times : CircularBuffer<u128, 2> = CircularBuffer::new();
     loop {
         // take a temperature measurement
-        let temperature = get_temp()?;
-        info!("temperature: {}", temperature);
+        let temperatures = get_temp()?;
+        let temperature = temperatures[0];
+        info!("TEMPS, {}", temperatures.into_iter().map(|x| x.to_string()).join(","));
         state.push(temperature);
         state.push_time();
 
